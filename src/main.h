@@ -19,5 +19,8 @@
 #include <main_service.h>
 #include <rgbled.h>
 #include <web_server.h>
+#include <mdns_service.h>
+#include <discovery.h>
+#include <ota_service.h>
 
 #endif

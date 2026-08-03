@@ -24,7 +24,12 @@ void setup()
 
     setupWebSocket();  // 初始化WebSocket
     setupWebServer();  // 初始化Web服务器
-    
+
+    // 初始化网络服务（WiFi 已连接）
+    mdns_init();       // mDNS: charging-station.local
+    discovery_init();  // UDP 广播发现 (端口 9999)
+    ota_init();        // ArduinoOTA 固件升级
+
     // 初始化所有开关
     setTypeC32Output(USBC32_Switch);
     setTypeC1Output(USBC1_Switch);
@@ -40,4 +45,7 @@ void loop()
     web_server_run(); /* let the web server do its work */
     time_server_update();
     wificonfig();
+    mdns_update();        /* mDNS 周期维护 */
+    discovery_handle();   /* UDP 广播发现处理 */
+    ota_handle();         /* OTA 升级处理 */
 }
