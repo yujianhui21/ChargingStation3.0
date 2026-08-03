@@ -1,7 +1,7 @@
 #include <mdns_service.h>
 #include <WiFi.h>
 
-void mdns_init()
+void mdns_service_init()
 {
     if (WiFi.status() != WL_CONNECTED)
     {
@@ -21,7 +21,7 @@ void mdns_init()
     }
 }
 
-void mdns_update()
+void mdns_service_update()
 {
     // MDNS.update() 是空操作（ESP32 核心在后台处理 mDNS），
     // 保留此接口以便将来扩展

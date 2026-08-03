@@ -11,13 +11,13 @@
  * http://charging-station.local 直接访问。
  * 需在 WiFi 连接成功后调用。
  */
-void mdns_init();
+void mdns_service_init();
 
 /**
  * @brief mDNS 周期性维护
  *
  * 处理 mDNS 查询请求，需在主循环中频繁调用。
  */
-void mdns_update();
+void mdns_service_update();
 
 #endif
