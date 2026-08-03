@@ -4,4 +4,5 @@
 .vscode/ipch
 .DS_Store
 /.pio/build
+/dist
 /UI/backup

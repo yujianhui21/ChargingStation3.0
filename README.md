@@ -65,6 +65,27 @@ pio run --target upload --upload-port <设备IP地址>
 pio device monitor
 ```
 
+### 生成 BIN 固件文件
+
+执行 `pio run --target export_bins` 可同时编译固件并导出两种发布用 BIN 文件到 `dist/` 目录：
+
+```bash
+pio run --target export_bins
+```
+
+| 产物 | 说明 | 用途 |
+|---|---|---|
+| `dist/ChargingStation3.0-ota.bin` | 仅应用固件 (firmware.bin) | OTA 升级、网页刷写 |
+| `dist/ChargingStation3.0-factory.bin` | 合并完整镜像 (bootloader + partitions + boot_app0 + firmware) | USB 首次烧录、工厂批量烧录 |
+
+**使用合并镜像烧录（乐鑫 Flash Download Tool / esptool.py）：**
+
+```powershell
+esptool.py --chip esp32s3 --port COM3 --baud 921600 write_flash 0x0 dist/ChargingStation3.0-factory.bin
+```
+
+`scripts/export_bins.py` 通过 `platformio.ini` 中的 `extra_scripts` 注册为自定义 target，固件有改动时 `export_bins` 会自动先重新编译再导出，无需手动复制。
+
 ### 调试
 
 在 `src/main.h` 中通过 `#define ENABLE_DEBUG 1` 控制调试输出，默认开启。
