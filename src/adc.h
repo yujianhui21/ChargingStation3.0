@@ -5,8 +5,8 @@
 #define ADC1_PIN 2
 #define ADC2_PIN 3
 
-#define R_NTC 100000
-#define R_DIV 10000
+#define R_NTC 100000   // NTC 25°C 标称阻值 (NTC100K B3950)
+#define R_DIV 100000   // NTC 分压上拉电阻 (100kΩ，勿写成 10k)
 #define NTC_REF_TEMP 25
 
 

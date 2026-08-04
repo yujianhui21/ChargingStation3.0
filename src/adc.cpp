@@ -33,7 +33,7 @@ void readVoltages() {
     voltage0 = voltage0_adc * (float)(analogReadMilliVolts(ADC0_PIN)) * 1e-3;
     voltage1 = voltage1_adc * (float)(analogReadMilliVolts(ADC1_PIN)) * 1e-3;
 
-    float ntc_voltage = analogReadMilliVolts(ADC2_PIN) * 3.3 / 4095.0;
+    float ntc_voltage = analogReadMilliVolts(ADC2_PIN) * 1e-3;   // mV → V（校准后毫伏，勿乘 3.3/4095）
     float r_ntc = R_DIV * ntc_voltage / (3.3 - ntc_voltage);
     float steinhart = r_ntc / R_NTC;
     steinhart = log(steinhart);
@@ -41,6 +41,17 @@ void readVoltages() {
     steinhart += 1.0 / (NTC_REF_TEMP + 273.15);
     steinhart = 1.0 / steinhart;
     temperature = temperature_adc * (steinhart - 273.15);
+
+#ifdef ENABLE_DEBUG
+    // 调试输出（节流到 2s）：观察 ADC 原始毫伏与实际算出的 NTC 阻值，便于校准 R_DIV
+    static uint32_t lastDbgPrint = 0;
+    if (millis() - lastDbgPrint >= 2000)
+    {
+        lastDbgPrint = millis();
+        Serial.printf("[ADC] ntc=%umV r_ntc=%.0fOhm T=%.1fC\n",
+                      analogReadMilliVolts(ADC2_PIN), r_ntc, temperature);
+    }
+#endif
     // 更新移动平均滤波器
     temperature_sum -= temperature_buffer[temperature_index]; // 减去旧值
     temperature_sum += temperature; // 加上新值
