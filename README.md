@@ -51,19 +51,29 @@ License — CERN-OHL-P v2
 
 ### 编译 & 烧录
 
+> 注意：`platformio.ini` 默认 `upload_protocol = espota`，因此
+> `pio run --target upload` 默认走 **OTA 无线烧录**。
+> USB 串口烧录需用下面的 `esptool.py` 命令。
+
 ```bash
 # 编译固件
 pio run
 
-# USB 串口烧录
-pio run --target upload --upload-port <COM端口>
-
 # OTA 无线烧录（设备需先通过 USB 烧录一次基础固件）
 pio run --target upload --upload-port <设备IP地址>
+
+# USB 串口烧录（升级已烧录过完整镜像的设备，只更新 app 分区 0x10000）
+esptool.py --chip esp32s3 --port <COM端口> --baud 921600 write_flash 0x10000 .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+# USB 首次烧录（全新设备，烧完整镜像到 0x0）
+esptool.py --chip esp32s3 --port <COM端口> --baud 921600 write_flash 0x0 dist/ChargingStation3.0-factory.bin
 
 # 串口监视 (115200 baud)
 pio device monitor
 ```
+
+`esptool.py` 位于 `C:\Users\<用户名>\.platformio\packages\tool-esptoolpy\esptool.py`，
+或直接在 PlatformIO 环境中使用 `python -m esptool`（需先 `pip install esptool`）。
 
 ### 生成 BIN 固件文件
 
