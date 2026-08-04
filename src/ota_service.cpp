@@ -4,6 +4,17 @@
 #include <Preferences.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
+#include <lvgl.h>
+#include "ui/ui.h"
+
+// ui_font_OTA 由 src/ui/fonts/ui_font_OTA.c 定义（未在生成的 ui.h 中声明）
+#ifdef __cplusplus
+extern "C" {
+#endif
+LV_FONT_DECLARE(ui_font_OTA);
+#ifdef __cplusplus
+}
+#endif
 
 // ===================== 断点续传 OTA =====================
 // 协议（TCP 3232，由电脑端主动连接）：
@@ -22,6 +33,11 @@ static const uint32_t OTA_WRITE_CHUNK = 4096;         // 每次读取+写入块�
 static const uint32_t OTA_NVS_SAVE_INTERVAL = 16384;  // 每写 16KB 存一次进度到 NVS
 static const uint32_t OTA_RECV_IDLE_TIMEOUT = 8000;   // 接收空闲超时(ms)，超时视为断线
 
+// ===== OTA 屏幕显示 =====
+static const uint32_t OTA_UI_PUMP_MS = 20;        // LVGL 刷新泵间隔(ms)
+static const uint32_t OTA_UI_UPDATE_MS = 100;     // 进度条/百分比刷新间隔(ms)
+static const uint32_t OTA_UI_HIDE_MS = 15000;     // 会话结束后无新连接则自动隐藏覆盖层(ms)
+
 static const char *OTA_PREF_NS = "ota";
 static const char *OTA_KEY_MD5 = "md5";
 static const char *OTA_KEY_OFF = "off";
@@ -29,6 +45,14 @@ static const char *OTA_KEY_OFF = "off";
 static WiFiServer otaServer(OTA_PORT);
 static Preferences otaPrefs;
 static bool started = false;
+
+// ===== OTA 全屏覆盖层控件（位于所有屏幕之上，升级时提示用户） =====
+static lv_obj_t *ota_ui_panel = NULL;         // 覆盖层根容器
+static lv_obj_t *ota_ui_title = NULL;         // 状态标题（中文）
+static lv_obj_t *ota_ui_bar = NULL;           // 进度条
+static lv_obj_t *ota_ui_pct = NULL;           // 百分比文字
+static lv_obj_t *ota_ui_hint = NULL;          // 底部提示
+static unsigned long ota_ui_idle_start = 0;   // 会话结束时刻；0 表示无需自动隐藏
 
 // ===== 读取一行（直到 '\n'），带超时 =====
 static String readLine(WiFiClient &client, uint32_t timeoutMs)
@@ -61,6 +85,94 @@ static void saveProgress(uint32_t offset, const String &md5)
     otaPrefs.putString(OTA_KEY_MD5, md5);
 }
 
+// ===== 显示全屏覆盖层（已存在则仅更新标题） =====
+static void otaUiShow(const char *title)
+{
+    if (ota_ui_panel != NULL)
+    {
+        lv_label_set_text(ota_ui_title, title);
+        return;
+    }
+
+    lv_obj_t *panel = lv_obj_create(lv_layer_top());   // 顶层图层：盖在所有屏幕之上
+    ota_ui_panel = panel;
+    Serial.println(F("[OTA] 屏幕显示升级界面"));
+    lv_obj_remove_style_all(panel);
+    lv_obj_set_size(panel, lv_disp_get_hor_res(lv_disp_get_default()),
+                    lv_disp_get_ver_res(lv_disp_get_default()));
+    lv_obj_set_pos(panel, 0, 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(0x101010), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(panel, LV_OPA_90, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);   // 拦截触屏/按键，避免误操作底层控件
+
+    ota_ui_title = lv_label_create(panel);
+    lv_obj_set_style_text_font(ota_ui_title, &ui_font_OTA, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ota_ui_title, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(ota_ui_title, title);
+    lv_obj_align(ota_ui_title, LV_ALIGN_TOP_MID, 0, 26);
+
+    ota_ui_bar = lv_bar_create(panel);
+    lv_obj_set_size(ota_ui_bar, 200, 12);
+    lv_obj_set_style_radius(ota_ui_bar, 6, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ota_ui_bar, lv_color_hex(0x333333), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ota_ui_bar, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ota_ui_bar, 6, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ota_ui_bar, lv_color_hex(0x00C853), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ota_ui_bar, 255, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    lv_bar_set_range(ota_ui_bar, 0, 100);
+    lv_bar_set_value(ota_ui_bar, 0, LV_ANIM_OFF);
+    lv_obj_align(ota_ui_bar, LV_ALIGN_CENTER, 0, 0);
+
+    ota_ui_pct = lv_label_create(panel);
+    lv_obj_set_style_text_font(ota_ui_pct, &ui_font_ASCII32MONO, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ota_ui_pct, lv_color_hex(0x00FF88), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(ota_ui_pct, "0%");
+    lv_obj_align(ota_ui_pct, LV_ALIGN_CENTER, 0, 44);
+
+    ota_ui_hint = lv_label_create(panel);
+    lv_obj_set_style_text_font(ota_ui_hint, &ui_font_OTA, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ota_ui_hint, lv_color_hex(0xAAAAAA), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(ota_ui_hint, "请勿断电");
+    lv_obj_align(ota_ui_hint, LV_ALIGN_BOTTOM_MID, 0, -14);
+}
+
+// ===== 更新状态标题 =====
+static void otaUiSetState(const char *title)
+{
+    if (ota_ui_panel != NULL)
+    {
+        lv_label_set_text(ota_ui_title, title);
+    }
+}
+
+// ===== 更新进度条与百分比 =====
+static void otaUiSetProgress(uint32_t written, uint32_t total)
+{
+    if (ota_ui_panel == NULL || total == 0)
+    {
+        return;
+    }
+    uint8_t pct = (uint8_t)((uint64_t)written * 100 / total);
+    lv_bar_set_value(ota_ui_bar, pct, LV_ANIM_OFF);
+    lv_label_set_text_fmt(ota_ui_pct, "%d%%", pct);
+}
+
+// ===== 隐藏并销毁覆盖层 =====
+static void otaUiHide(void)
+{
+    if (ota_ui_panel != NULL)
+    {
+        lv_obj_del(ota_ui_panel);
+        ota_ui_panel = NULL;
+        ota_ui_title = NULL;
+        ota_ui_bar = NULL;
+        ota_ui_pct = NULL;
+        ota_ui_hint = NULL;
+        Serial.println(F("[OTA] 屏幕隐藏升级界面"));
+    }
+}
+
 // ===== 处理单个客户端连接（阻塞式，直到传输完成或断线） =====
 static void handleClient(WiFiClient &client)
 {
@@ -90,6 +202,11 @@ static void handleClient(WiFiClient &client)
         return;
     }
 
+    // 请求合法：显示全屏升级提示，取消自动隐藏计时
+    otaUiShow("正在升级固件");
+    ota_ui_idle_start = 0;
+    lv_task_handler();   // 立即渲染，擦除分区期间界面保持显示
+
     // 2. 决定起始偏移：MD5 相同且已有进度则续传，否则全新开始
     String storedMd5 = otaPrefs.getString(OTA_KEY_MD5, "");
     uint32_t storedOff = otaPrefs.getUInt(OTA_KEY_OFF, 0);
@@ -104,6 +221,8 @@ static void handleClient(WiFiClient &client)
     if (target == NULL)
     {
         Serial.println(F("[OTA] 找不到 OTA 分区"));
+        otaUiSetState("升级失败");
+        ota_ui_idle_start = millis();
         client.println("E no-partition");
         return;
     }
@@ -115,6 +234,8 @@ static void handleClient(WiFiClient &client)
         if (err != ESP_OK)
         {
             Serial.printf("[OTA] 擦除分区失败: %s\n", esp_err_to_name(err));
+            otaUiSetState("升级失败");
+            ota_ui_idle_start = millis();
             client.println("E erase-failed");
             return;
         }
@@ -131,6 +252,8 @@ static void handleClient(WiFiClient &client)
     // 5. 接收并写入固件
     uint32_t written = offset;
     uint32_t lastNvsSave = offset;
+    unsigned long lastLvPump = 0;    // LVGL 刷新节流
+    unsigned long lastUiUpdate = 0;  // 进度刷新节流
     static uint8_t buf[OTA_WRITE_CHUNK];
 
     while (written < totalSize)
@@ -139,6 +262,8 @@ static void handleClient(WiFiClient &client)
         {
             saveProgress(written, reqMd5);
             Serial.printf("[OTA] 连接断开，已保存进度 %u/%u\n", written, totalSize);
+            otaUiSetState("连接中断，正在重连");
+            ota_ui_idle_start = millis();
             return;
         }
 
@@ -151,12 +276,19 @@ static void handleClient(WiFiClient &client)
                    && millis() - idleStart < OTA_RECV_IDLE_TIMEOUT)
             {
                 delay(1);
+                if (millis() - lastLvPump >= OTA_UI_PUMP_MS)
+                {
+                    lv_task_handler();
+                    lastLvPump = millis();
+                }
             }
             avail = client.available();
             if (avail == 0)
             {
                 saveProgress(written, reqMd5);
                 Serial.printf("[OTA] 接收空闲超时，已保存进度 %u/%u\n", written, totalSize);
+                otaUiSetState("连接中断，正在重连");
+                ota_ui_idle_start = millis();
                 return;
             }
         }
@@ -181,6 +313,8 @@ static void handleClient(WiFiClient &client)
         if (err != ESP_OK)
         {
             Serial.printf("[OTA] 写入失败: %s\n", esp_err_to_name(err));
+            otaUiSetState("升级失败");
+            ota_ui_idle_start = millis();
             client.println("E write-failed");
             saveProgress(written, reqMd5);
             return;
@@ -194,6 +328,18 @@ static void handleClient(WiFiClient &client)
         }
         client.printf("A %u\n", written);  // 每块确认
 
+        // 更新屏幕进度并泵 LVGL（限频，保证传输期间界面实时刷新）
+        if (millis() - lastUiUpdate >= OTA_UI_UPDATE_MS)
+        {
+            otaUiSetProgress(written, totalSize);
+            lastUiUpdate = millis();
+        }
+        if (millis() - lastLvPump >= OTA_UI_PUMP_MS)
+        {
+            lv_task_handler();
+            lastLvPump = millis();
+        }
+
         // 进度打印（每 ~512KB）
         if (written % (512 * 1024) < OTA_WRITE_CHUNK)
         {
@@ -206,15 +352,19 @@ static void handleClient(WiFiClient &client)
     if (err != ESP_OK)
     {
         Serial.printf("[OTA] 设置启动分区失败: %s\n", esp_err_to_name(err));
+        otaUiSetState("升级失败");
+        ota_ui_idle_start = millis();
         client.println("E set-boot-failed");
         return;
     }
 
     otaPrefs.remove(OTA_KEY_OFF);
     otaPrefs.remove(OTA_KEY_MD5);
+    otaUiSetState("升级完成，正在重启");
     client.println("OK");
     Serial.println(F("[OTA] 更新完成，即将重启"));
-    delay(100);
+    lv_task_handler();   // 刷新一次，让"升级完成"先显示出来
+    delay(300);
     ESP.restart();
 }
 
@@ -245,6 +395,14 @@ void ota_handle()
     if (!started)
     {
         return;
+    }
+
+    // 会话已结束且长时间无新连接：隐藏覆盖层，恢复原界面
+    if (ota_ui_panel != NULL && ota_ui_idle_start != 0
+        && millis() - ota_ui_idle_start >= OTA_UI_HIDE_MS)
+    {
+        otaUiHide();
+        ota_ui_idle_start = 0;
     }
 
     WiFiClient client = otaServer.available();

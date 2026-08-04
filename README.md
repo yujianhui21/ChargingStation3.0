@@ -126,7 +126,7 @@ ChargingStation3.0/
 │   ├── web_server.cpp/h      # AsyncWebServer + WebSocket + 嵌入式仪表盘
 │   ├── mdns_service.cpp/h    # mDNS 服务 (局域网域名访问)
 │   ├── discovery.cpp/h       # UDP 广播发现 (设备自动发现)
-│   ├── ota_service.cpp/h     # 断点续传 OTA 固件升级 (自定义 TCP 协议, 端口 3232)
+│   ├── ota_service.cpp/h     # 断点续传 OTA 固件升级 (自定义 TCP 协议, 端口 3232, 升级时屏幕显示进度)
 │   └── ui/                   # SquareLine Studio 生成的 LVGL UI
 │       ├── ui.c/h            # UI 主入口
 │       ├── ui_events.c/h     # UI 事件桩 (实现在 lvgl_event.cpp)
@@ -137,7 +137,7 @@ ChargingStation3.0/
 │       │   ├── ui_AdvancedSettingScreen.c # 高级设置
 │       │   ├── ui_WiFiScreen.c          # WiFi 配置
 │       │   └── ui_WeatherScreen.c       # 天气显示
-│       ├── fonts/            # 字体文件 (ASCII 16/20/32/40/56, 中文)
+│       ├── fonts/            # 字体文件 (ASCII 16/20/32/40/56, 中文, OTA 提示专用 ui_font_OTA)
 │       └── images/           # 图片资源 (天气图标等)
 ├── UI/                       # SquareLine Studio 工程文件
 │   ├── ChargerStation.sll    # SquareLine 工程
@@ -274,7 +274,12 @@ pio device monitor
 - 上传脚本 `scripts/espota_resume.py`：WiFi 抖动导致连接断开时自动重连并续传；
 - 设备重启也不怕——NVS 中保存的进度仍然有效，下次上传同一固件（MD5 相同）
   会直接从断点继续，无需从头再传；
-- 固件上传成功后设备自动切换分区并重启，无需人工干预。
+- 固件上传成功后设备自动切换分区并重启，无需人工干预；
+- 升级期间设备屏幕显示全屏提示：「正在升级固件」+ 进度条 + 百分比 +「请勿断电」；
+  断线重连时显示「连接中断，正在重连」，失败显示「升级失败」，成功重启前显示
+  「升级完成，正在重启」。提示文字用自定义字体 `ui_font_OTA`
+  （`src/ui/fonts/ui_font_OTA.c`，由 `lv_font_conv` 从 `UI/assets/SarasaMonoSC-Bold.ttf`
+  生成，独立于 SquareLine 管理的字体，重新导出 UI 不会被覆盖）。
 
 **注意：** 首次烧录需通过 USB 完成，之后即可通过无线 OTA 升级。
 
