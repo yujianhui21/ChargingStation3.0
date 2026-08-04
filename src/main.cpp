@@ -28,7 +28,7 @@ void setup()
     // 初始化网络服务（init 幂等，WiFi 未连接时跳过，配网成功后自动补启动）
     mdns_service_init();  // mDNS: charging-station.local
     discovery_init();     // UDP 广播发现 (端口 9999)
-    ota_init();           // ArduinoOTA 固件升级
+    ota_init();           // 断点续传 OTA 固件升级 (TCP 3232)
 
     // 初始化所有开关
     setTypeC32Output(USBC32_Switch);

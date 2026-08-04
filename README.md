@@ -17,7 +17,7 @@ License — CERN-OHL-P v2
 | 框架 | Arduino (PlatformIO) |
 | 显示屏 | 240×240 TFT (TFT_eSPI 驱动) |
 | GUI | LVGL 8.3.11 + SquareLine Studio 1.5.1 |
-| 分区表 | partitions/ota_8MB.csv (双 OTA 分区, 各 ~4MB, 支持 ArduinoOTA) |
+| 分区表 | partitions/ota_8MB.csv (双 OTA 分区, 各 ~4MB, 支持断点续传 OTA) |
 | Flash | 8MB |
 
 ## GPIO 引脚定义
@@ -51,19 +51,19 @@ License — CERN-OHL-P v2
 
 ### 编译 & 烧录
 
-> 注意：`platformio.ini` 默认 `upload_protocol = espota`，因此
-> `pio run --target upload` 默认走 **OTA 无线烧录**。
-> USB 串口烧录需用下面的 `esptool.py` 命令。
+> 注意：`platformio.ini` 默认 `upload_protocol = esptool`，即
+> `pio run --target upload` 走 **USB 串口烧录**。
+> 无线 OTA 使用断点续传脚本，见下方「OTA 无线固件升级（断点续传）」。
 
 ```bash
 # 编译固件
 pio run
 
-# OTA 无线烧录（设备需先通过 USB 烧录一次基础固件）
-pio run --target upload --upload-port <设备IP地址>
-
 # USB 串口烧录（升级已烧录过完整镜像的设备，只更新 app 分区 0x10000）
 esptool.py --chip esp32s3 --port <COM端口> --baud 921600 write_flash 0x10000 .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+# 无线 OTA 升级（断点续传，WiFi 不稳定也能完整传完）
+python scripts/espota_resume.py -i <设备IP地址> -f .pio/build/esp32-s3-devkitc-1/firmware.bin
 
 # USB 首次烧录（全新设备，烧完整镜像到 0x0）
 esptool.py --chip esp32s3 --port <COM端口> --baud 921600 write_flash 0x0 dist/ChargingStation3.0-factory.bin
@@ -126,7 +126,7 @@ ChargingStation3.0/
 │   ├── web_server.cpp/h      # AsyncWebServer + WebSocket + 嵌入式仪表盘
 │   ├── mdns_service.cpp/h    # mDNS 服务 (局域网域名访问)
 │   ├── discovery.cpp/h       # UDP 广播发现 (设备自动发现)
-│   ├── ota_service.cpp/h     # ArduinoOTA 固件无线升级
+│   ├── ota_service.cpp/h     # 断点续传 OTA 固件升级 (自定义 TCP 协议, 端口 3232)
 │   └── ui/                   # SquareLine Studio 生成的 LVGL UI
 │       ├── ui.c/h            # UI 主入口
 │       ├── ui_events.c/h     # UI 事件桩 (实现在 lvgl_event.cpp)
@@ -181,7 +181,7 @@ void loop()
     wificonfig();         // WiFi 重配置处理
     mdns_service_update();   // mDNS 周期维护
     discovery_handle();      // UDP 广播发现请求处理
-    ota_handle();            // ArduinoOTA 固件升级处理
+    ota_handle();            // 断点续传 OTA 升级处理
 }
 ```
 
@@ -254,20 +254,29 @@ sock.close()
 {"name":"多协议桌面充电站3.0","ip":"192.168.1.100","mac":"AA:BB:CC:DD:EE:FF"}
 ```
 
-### 4. OTA 无线固件升级
+### 4. OTA 无线固件升级（断点续传）
+
+OTA 使用项目自定义的断点续传协议（`src/ota_service.cpp`，TCP 端口 3232）。
+WiFi 信号不稳定导致传输中断时，已写入的进度会保存到 NVS，重连后自动从断点
+继续，直到完整传完，不再像传统 OTA 一样中途失败就得重头再来。
 
 ```bash
-# 编译并 OTA 上传
-pio run --target upload --upload-port 192.168.1.100
+# 编译并无线上传（断点续传，连接断开会自动重连继续）
+python scripts/espota_resume.py -i 192.168.1.100 -f .pio/build/esp32-s3-devkitc-1/firmware.bin
 
 # 串口监控升级进度
 pio device monitor
-# [OTA] 开始更新 固件
-# [OTA] 进度: 50%
-# [OTA] 更新完成
+# [OTA] 从偏移 52448 (2%) 续传
+# [OTA] 进度: 43% (1051872/2429024)
+# [OTA] 更新完成，即将重启
 ```
 
-**注意：** 首次烧录需通过 USB 完成，之后即可通过 OTA 升级。OTA 默认端口 3232 (ArduinoOTA 标准端口)。
+- 上传脚本 `scripts/espota_resume.py`：WiFi 抖动导致连接断开时自动重连并续传；
+- 设备重启也不怕——NVS 中保存的进度仍然有效，下次上传同一固件（MD5 相同）
+  会直接从断点继续，无需从头再传；
+- 固件上传成功后设备自动切换分区并重启，无需人工干预。
+
+**注意：** 首次烧录需通过 USB 完成，之后即可通过无线 OTA 升级。
 
 ---
 
@@ -309,7 +318,7 @@ pio device monitor
 | AsyncTCP | ^3.3.8 | 异步 TCP |
 | Adafruit NeoPixel | (bundled) | RGB LED |
 | ESPmDNS | (built-in) | mDNS 服务 |
-| ArduinoOTA | (built-in) | OTA 升级 |
+| 自定义 OTA (esp_ota_ops) | (built-in) | 断点续传无线升级 |
 | WiFiUdp | (built-in) | UDP 通信 |
 
 ---
