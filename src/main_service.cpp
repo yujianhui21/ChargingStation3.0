@@ -50,6 +50,13 @@ int reconnect_ui_timer = 0;
 bool time_server_update_flag;
 void time_server_update()
 {
+    // 配网期间跳过 WiFi 状态 UI 更新与自动重连，
+    // 避免覆盖配置门户的"请连接至热点"界面、或干扰门户工作
+    if (wificonfig_flag == true)
+    {
+        return;
+    }
+
     if(WiFi.status() == WL_CONNECTED)
     {
         time_server_update_flag = timeClient.update();
