@@ -278,8 +278,8 @@ pio device monitor
 - 升级期间设备屏幕显示全屏提示：「正在升级固件」+ 进度条 + 百分比 +「请勿断电」；
   断线重连时显示「连接中断，正在重连」，失败显示「升级失败」，成功重启前显示
   「升级完成，正在重启」。提示文字用自定义字体 `ui_font_OTA`
-  （`src/ui/fonts/ui_font_OTA.c`，由 `lv_font_conv` 从 `UI/assets/SarasaMonoSC-Bold.ttf`
-  生成，独立于 SquareLine 管理的字体，重新导出 UI 不会被覆盖）。
+  （`UI/assets/ui_font_OTA.{bin,c,fcfg}` 为 SquareLine 管理的字体源，`src/ui/fonts/ui_font_OTA.c`
+  为固件编译副本，由 `lv_font_conv` 从 `UI/assets/SarasaMonoSC-Bold.ttf` 生成）。
 
 **注意：** 首次烧录需通过 USB 完成，之后即可通过无线 OTA 升级。
 

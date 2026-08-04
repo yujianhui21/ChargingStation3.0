@@ -1,0 +1,16 @@
+{
+  "codename": "OTA",
+  "ttf_path": "/assets/SarasaMonoSC-Bold.ttf",
+  "bin_path": "/assets/ui_font_OTA.bin",
+  "c_path": "/assets/ui_font_OTA.c",
+  "cfg_path": "/assets/ui_font_OTA.fcfg",
+  "size": 20,
+  "bpp": 4,
+  "letters": 0,
+  "ranges": [
+    "0x20-0x7f"
+  ],
+  "symbols": "正在升级固件连接中断失败完成请勿电，",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}
