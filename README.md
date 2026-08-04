@@ -17,7 +17,7 @@ License — CERN-OHL-P v2
 | 框架 | Arduino (PlatformIO) |
 | 显示屏 | 240×240 TFT (TFT_eSPI 驱动) |
 | GUI | LVGL 8.3.11 + SquareLine Studio 1.5.1 |
-| 分区表 | max_app_8MB.csv (8MB app 分区) |
+| 分区表 | partitions/ota_8MB.csv (双 OTA 分区, 各 ~4MB, 支持 ArduinoOTA) |
 | Flash | 8MB |
 
 ## GPIO 引脚定义
