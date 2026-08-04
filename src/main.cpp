@@ -18,17 +18,17 @@ void setup()
     RGB_init(); /* Initialize the RGB LED */
     lvgl_group_init(); /* Initialize the LVGL group */
 
-    wificonnect(); /* Connect to the wifi */
+    wificonnect(); /* Connect to the wifi (带超时；同时初始化WiFi/TCP-IP栈，供后续Web服务使用) */
     time_server_init(NTPServer.c_str(), TimeZone, SyncTime); /* Initialize the time server */
     weather_init(qWeather_Key, CityCode, qWeather_ApiHost); /* Initialize the weather server */
 
     setupWebSocket();  // 初始化WebSocket
     setupWebServer();  // 初始化Web服务器
 
-    // 初始化网络服务（WiFi 已连接）
-    mdns_service_init();       // mDNS: charging-station.local
-    discovery_init();  // UDP 广播发现 (端口 9999)
-    ota_init();        // ArduinoOTA 固件升级
+    // 初始化网络服务（init 幂等，WiFi 未连接时跳过，配网成功后自动补启动）
+    mdns_service_init();  // mDNS: charging-station.local
+    discovery_init();     // UDP 广播发现 (端口 9999)
+    ota_init();           // ArduinoOTA 固件升级
 
     // 初始化所有开关
     setTypeC32Output(USBC32_Switch);

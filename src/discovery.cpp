@@ -2,9 +2,15 @@
 #include <WiFi.h>
 
 static WiFiUDP udpDiscovery;  // 独立于 NTP 的 UDP 实例
+static bool udp_started = false;  // UDP 监听是否已启动
 
 void discovery_init()
 {
+    if (udp_started)
+    {
+        return;  // 已启动，避免重复绑定端口
+    }
+
     if (WiFi.status() != WL_CONNECTED)
     {
         Serial.println(F("[发现] WiFi 未连接，跳过初始化"));
@@ -12,11 +18,17 @@ void discovery_init()
     }
 
     udpDiscovery.begin(DISCOVERY_PORT);
+    udp_started = true;
     Serial.printf("[发现] UDP 广播已启动 (端口 %d)\n", DISCOVERY_PORT);
 }
 
 void discovery_handle()
 {
+    if (!udp_started)
+    {
+        return;  // 未启动（WiFi 未连接），避免对未绑定 socket 调用 parsePacket
+    }
+
     // 解析所有待处理的 UDP 数据包
     while (udpDiscovery.parsePacket())
     {

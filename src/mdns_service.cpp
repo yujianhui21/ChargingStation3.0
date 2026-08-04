@@ -3,6 +3,12 @@
 
 void mdns_service_init()
 {
+    static bool started = false;
+    if (started)
+    {
+        return;  // 已启动，避免重复注册
+    }
+
     if (WiFi.status() != WL_CONNECTED)
     {
         Serial.println(F("[mDNS] WiFi 未连接，跳过初始化"));
@@ -12,6 +18,7 @@ void mdns_service_init()
     if (MDNS.begin("charging-station"))
     {
         MDNS.addService("http", "tcp", 80);
+        started = true;
         Serial.println(F("[mDNS] charging-station.local 已就绪"));
         Serial.println(F("[mDNS] HTTP 服务已注册 (端口 80)"));
     }

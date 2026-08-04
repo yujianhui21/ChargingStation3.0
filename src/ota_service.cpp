@@ -2,6 +2,18 @@
 
 void ota_init()
 {
+    static bool started = false;
+    if (started)
+    {
+        return;  // 已启动，避免重复注册
+    }
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println(F("[OTA] WiFi 未连接，跳过初始化"));
+        return;
+    }
+
     // 设置 OTA 主机名（与 mDNS 主机名一致）
     ArduinoOTA.setHostname("charging-station");
 
@@ -62,6 +74,7 @@ void ota_init()
     });
 
     ArduinoOTA.begin();
+    started = true;
     Serial.println(F("[OTA] 已就绪"));
     Serial.printf("[OTA] 上传命令: pio run --target upload --upload-port %s\n",
                   WiFi.localIP().toString().c_str());

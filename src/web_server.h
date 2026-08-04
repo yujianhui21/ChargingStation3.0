@@ -32,6 +32,8 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
              void *arg, uint8_t *data, size_t len);
 void setupWebSocket();
 void setupWebServer();
+void web_server_stop();
+void web_server_start();
 void sendSensorData();
 void web_server_run();
 

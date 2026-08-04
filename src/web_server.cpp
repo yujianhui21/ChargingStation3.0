@@ -1553,7 +1553,17 @@ void setupWebServer() {
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
       request->send(200, "text/html; charset=UTF-8", index_html);
     });
-    
+
+    server.begin();
+  }
+
+  // 配网期间停止 Web 服务器，释放端口 80 给 WiFiManager 配置门户
+  void web_server_stop() {
+    server.end();
+  }
+
+  // 配网结束后重启 Web 服务器
+  void web_server_start() {
     server.begin();
   }
   
