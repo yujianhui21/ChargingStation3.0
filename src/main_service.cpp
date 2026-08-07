@@ -7,6 +7,9 @@ Weather weather;
 lv_timer_t* NTP_timer = NULL;
 lv_timer_t* NTP_Update_timer = NULL;
 
+// 网页保存天气/时间配置后，请求主循环立即刷新天气
+bool weather_refresh_flag = false;
+
 void time_server_init(const char* poolServerName, long timeOffset, float updateInterval)
 {
     timeClient.setPoolServerName(poolServerName);    
@@ -59,6 +62,14 @@ void time_server_update()
 
     if(WiFi.status() == WL_CONNECTED)
     {
+        // 网页保存配置后置位，在此立即刷新天气。
+        // 不在异步 Web 任务里直接调用 weather_update()，避免阻塞/并发访问共享 Weather 对象
+        if (weather_refresh_flag == true)
+        {
+            weather_refresh_flag = false;
+            weather_update();
+        }
+
         time_server_update_flag = timeClient.update();
         reconnect_wifi_timer = millis();
         reconnect_ui_timer = millis();
@@ -213,6 +224,12 @@ void weather_update()
         lv_label_set_text_fmt(ui_Humidity, "%03d%%", weather.getHumidity());
         lv_label_set_text(ui_WeatherCHN, weather.getWeatherText().c_str());
     }
+}
+
+// 请求在下次主循环中刷新天气（用于网页保存配置后立即生效）
+void weather_request_refresh()
+{
+    weather_refresh_flag = true;
 }
 
 const lv_img_dsc_t* get_weather_icon(int code)

@@ -5,6 +5,14 @@ AsyncWebSocket ws("/ws"); // 创建WebSocket对象
 unsigned long lastTime = 0;
 const long interval = 100; // 数据更新间隔(毫秒)
 
+// main_service 函数前置声明：
+// 不能 #include <main_service.h> —— 它经 display.h→lvgl_event.h→wifi_service.h 间接引入
+// Arduino WebServer.h(nghttp http_parser.h) 的 HTTP_* 枚举，会与 ESPAsyncWebServer.h 冲突，
+// 且会把 HTTP_GET 从 0b00000001 变为 0，导致 Web 路由失配
+void time_server_setting(const char* poolServerName, long timeOffset, float updateInterval);
+void weather_init(String apiKey, String location, String ApiHost);
+void weather_request_refresh();
+
 // ===== HTML页面定义 =====
 const char index_html[] PROGMEM = R"rawliteral(
     <!DOCTYPE HTML>
@@ -380,6 +388,113 @@ const char index_html[] PROGMEM = R"rawliteral(
         body.dark-mode .time-display {
           background-color: rgba(255,255,255,0.15);
         }
+
+        /* 配置按钮 */
+        .config-button {
+          background: none;
+          border: none;
+          color: white;
+          font-size: 1.2rem;
+          cursor: pointer;
+          padding: 8px;
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: rgba(255,255,255,0.1);
+          transition: background-color 0.3s;
+        }
+        .config-button:hover {
+          background-color: rgba(255,255,255,0.2);
+        }
+
+        /* 配置面板 */
+        .config-panel {
+          width: calc(100% - 10px);
+          padding: 12px;
+          box-sizing: border-box;
+          border: 1px solid #ccc;
+          border-radius: 10px;
+          margin: 0 5px 16px 5px;
+          background-color: #fafafa;
+          overflow: hidden;
+        }
+        .config-body {
+          display: none;
+          padding: 10px 20px 0 20px;
+        }
+        .config-body.open {
+          display: block;
+        }
+        .config-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .config-row label {
+          flex: 0 0 180px;
+          text-align: right;
+          font-weight: 500;
+          color: #444;
+        }
+        .config-row input {
+          flex: 1;
+          padding: 8px 10px;
+          border: 1px solid #ccc;
+          border-radius: 6px;
+          font-size: 0.9rem;
+          box-sizing: border-box;
+        }
+        .config-actions {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          justify-content: flex-end;
+          margin-top: 6px;
+        }
+        .config-save {
+          background-color: #3498db;
+          color: white;
+          border: none;
+          padding: 10px 24px;
+          border-radius: 8px;
+          font-size: 0.95rem;
+          cursor: pointer;
+          font-weight: bold;
+        }
+        .config-save:hover {
+          background-color: #2980b9;
+        }
+        .config-status {
+          font-size: 0.85rem;
+          color: #27ae60;
+        }
+        .config-tip {
+          font-size: 0.75rem;
+          color: #999;
+          text-align: right;
+          margin: 8px 0 0 0;
+        }
+        /* 黑暗模式下配置面板样式 */
+        body.dark-mode .config-panel {
+          background-color: #1e1e1e;
+          border-color: #333;
+        }
+        body.dark-mode .config-row label {
+          color: #e0e0e0;
+        }
+        body.dark-mode .config-row input {
+          background-color: #2d2d2d;
+          border-color: #555;
+          color: #e0e0e0;
+        }
+        body.dark-mode .config-tip {
+          color: #aaa;
+        }
       </style>
     </head>
     <body>
@@ -388,6 +503,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         <div class="nav-right">
           <button id="darkModeToggle" class="dark-mode-button">
             <i class="fas fa-moon"></i>
+          </button>
+          <button id="configButton" class="config-button" title="配置">
+            <i class="fas fa-cog"></i>
           </button>
           <div id="currentTime" class="time-display">00:00:00</div>
         </div>
@@ -486,6 +604,42 @@ const char index_html[] PROGMEM = R"rawliteral(
           </div>
         </div>
         
+        <!-- 配置面板：天气/时间设置 -->
+        <div class="config-panel" id="configPanel">
+          <h3>配置</h3>
+          <div class="config-body" id="configBody">
+            <div class="config-row">
+              <label for="cfg-cityCode">城市代码</label>
+              <input type="text" id="cfg-cityCode" placeholder="101280101">
+            </div>
+            <div class="config-row">
+              <label for="cfg-qWeatherKey">和风天气 Key</label>
+              <input type="text" id="cfg-qWeatherKey" placeholder="你的 API Key">
+            </div>
+            <div class="config-row">
+              <label for="cfg-qWeatherApiHost">API 主机</label>
+              <input type="text" id="cfg-qWeatherApiHost" placeholder="devapi.qweather.com">
+            </div>
+            <div class="config-row">
+              <label for="cfg-ntpServer">NTP 服务器</label>
+              <input type="text" id="cfg-ntpServer" placeholder="pool.ntp.org">
+            </div>
+            <div class="config-row">
+              <label for="cfg-timeZone">时区</label>
+              <input type="number" id="cfg-timeZone" placeholder="8">
+            </div>
+            <div class="config-row">
+              <label for="cfg-syncTime">NTP/天气更新时间[小时]</label>
+              <input type="number" id="cfg-syncTime" step="0.5" min="0.5" placeholder="1">
+            </div>
+            <div class="config-actions">
+              <span id="configStatus" class="config-status"></span>
+              <button id="configSave" class="config-save">保存配置</button>
+            </div>
+            <p class="config-tip">保存后立即写入设备并同步时间/天气，无需重新配网。</p>
+          </div>
+        </div>
+
         <!-- 第一组图表 -->
         <div class="chart-group">
           <h3>Type-C 输出[3]</h3>
@@ -917,7 +1071,18 @@ const char index_html[] PROGMEM = R"rawliteral(
           if (data.switches) {
             updateSwitchStates(data);
           }
-          
+
+          // 处理天气/时间配置
+          // 若用户正在编辑（configDirty）则不再回填，避免连接重连/保存回显覆盖已输入内容
+          if (data.config && !configDirty) {
+            document.getElementById('cfg-cityCode').value = data.config.cityCode || '';
+            document.getElementById('cfg-qWeatherKey').value = data.config.qWeatherKey || '';
+            document.getElementById('cfg-qWeatherApiHost').value = data.config.qWeatherApiHost || '';
+            document.getElementById('cfg-ntpServer').value = data.config.ntpServer || '';
+            document.getElementById('cfg-timeZone').value = data.config.timeZone;
+            document.getElementById('cfg-syncTime').value = data.config.syncTime;
+          }
+
           // 处理主电源输入数据
           let mainPowerData = data["mainPower"];
           if (mainPowerData) {
@@ -1225,6 +1390,50 @@ const char index_html[] PROGMEM = R"rawliteral(
           }
         }
     
+        // 用户是否正在编辑配置字段（防止配置推送/重连覆盖已输入内容）
+        var configDirty = false;
+
+        // 展开/收起配置面板
+        function toggleConfigPanel() {
+          const body = document.getElementById('configBody');
+          const panel = document.getElementById('configPanel');
+          body.classList.toggle('open');
+          if (body.classList.contains('open')) {
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+
+        // 配置保存状态提示
+        function showConfigStatus(text, isError) {
+          const status = document.getElementById('configStatus');
+          status.textContent = text;
+          status.style.color = isError ? '#e74c3c' : '#27ae60';
+          setTimeout(function() { status.textContent = ''; }, 4000);
+        }
+
+        // 发送配置到设备
+        function saveConfig() {
+          if (websocket.readyState !== WebSocket.OPEN) {
+            showConfigStatus('WebSocket 未连接', true);
+            return;
+          }
+          let timeZone = parseInt(document.getElementById('cfg-timeZone').value, 10);
+          let syncTime = parseFloat(document.getElementById('cfg-syncTime').value);
+          if (isNaN(timeZone)) timeZone = 8;
+          if (isNaN(syncTime) || syncTime <= 0) syncTime = 1;
+          const data = {
+            action: 'config',
+            cityCode: document.getElementById('cfg-cityCode').value.trim(),
+            qWeatherKey: document.getElementById('cfg-qWeatherKey').value.trim(),
+            qWeatherApiHost: document.getElementById('cfg-qWeatherApiHost').value.trim(),
+            ntpServer: document.getElementById('cfg-ntpServer').value.trim(),
+            timeZone: timeZone,
+            syncTime: syncTime
+          };
+          websocket.send(JSON.stringify(data));
+          showConfigStatus('已保存，正在同步时间/天气…');
+        }
+
         // 页面加载时初始化
         window.addEventListener('load', function() {
           // 初始化时间并设置定时更新
@@ -1242,7 +1451,15 @@ const char index_html[] PROGMEM = R"rawliteral(
           
           // 开关初始化
           initSwitches();
-          
+
+          // 配置面板初始化
+          document.getElementById('configButton').addEventListener('click', toggleConfigPanel);
+          document.getElementById('configSave').addEventListener('click', saveConfig);
+          // 编辑任一配置字段即标记 dirty，此后配置推送不再覆盖输入框
+          document.querySelectorAll('#configBody input').forEach(function(input) {
+            input.addEventListener('input', function() { configDirty = true; });
+          });
+
           // WebSocket初始化
           initWebSocket();
 
@@ -1399,6 +1616,31 @@ const char index_html[] PROGMEM = R"rawliteral(
         Serial.println("发送开关状态到所有客户端");
       }
     }
+
+    // 发送天气/时间配置（可指定特定客户端或发送给所有客户端）
+    void sendConfig(AsyncWebSocketClient *client) {
+      JsonDocument doc;
+
+      JsonObject cfg = doc["config"].to<JsonObject>();
+      cfg["cityCode"] = CityCode;
+      cfg["qWeatherKey"] = qWeather_Key;
+      cfg["qWeatherApiHost"] = qWeather_ApiHost;
+      cfg["timeZone"] = TimeZone;
+      cfg["ntpServer"] = NTPServer;
+      cfg["syncTime"] = SyncTime;
+
+      // 将JSON文档序列化为字符串
+      String jsonString;
+      serializeJson(doc, jsonString);
+
+      // 如果指定了客户端，则只发送给该客户端
+      // 否则发送给所有连接的客户端
+      if (client) {
+        client->text(jsonString);
+      } else if (ws.count() > 0) {
+        ws.textAll(jsonString);
+      }
+    }
     
     // ===== 开关状态控制函数 =====
     
@@ -1516,6 +1758,25 @@ const char index_html[] PROGMEM = R"rawliteral(
             // 发送当前所有开关状态给所有客户端
             sendSwitchStates();
           }
+          // 处理天气/时间配置更新
+          else if (!doc["action"].isNull() && doc["action"] == "config") {
+            // 读取配置字段（字段缺失时保持原值）
+            if (!doc["cityCode"].isNull())        CityCode     = doc["cityCode"].as<String>();
+            if (!doc["qWeatherKey"].isNull())     qWeather_Key = doc["qWeatherKey"].as<String>();
+            if (!doc["qWeatherApiHost"].isNull()) qWeather_ApiHost = doc["qWeatherApiHost"].as<String>();
+            if (!doc["timeZone"].isNull())        TimeZone     = doc["timeZone"].as<uint8_t>();
+            if (!doc["ntpServer"].isNull())       NTPServer    = doc["ntpServer"].as<String>();
+            if (!doc["syncTime"].isNull())        SyncTime     = doc["syncTime"].as<float>();
+
+            // 持久化到 NVS 并立即生效
+            save_web_config();
+            time_server_setting(NTPServer.c_str(), TimeZone, SyncTime);
+            weather_init(qWeather_Key, CityCode, qWeather_ApiHost);
+            weather_request_refresh();  // 主循环下次迭代刷新天气
+
+            // 回传最新配置给所有客户端，便于界面回显
+            sendConfig();
+          }
         }
       }
     }
@@ -1526,8 +1787,13 @@ const char index_html[] PROGMEM = R"rawliteral(
       switch (type) {
         case WS_EVT_CONNECT:
           Serial.printf("WebSocket客户端 #%u 已连接 - %s\n", client->id(), client->remoteIP().toString().c_str());
-          // 客户端连接后立即发送当前开关状态给该客户端
+          // 高频传感器广播(100ms)下，客户端稍慢就会把发送队列塞满。
+          // 默认行为(队列满即断开)会导致周期掉线重连，而重连会重新下发配置，
+          // 覆盖用户正在编辑的配置输入框 —— 改为丢弃旧消息而不是断开连接。
+          client->setCloseClientOnQueueFull(false);
+          // 客户端连接后立即发送当前开关状态与配置给该客户端
           sendSwitchStates(client);
+          sendConfig(client);
           break;
         case WS_EVT_DISCONNECT:
           Serial.printf("WebSocket客户端 #%u 已断开连接\n", client->id());

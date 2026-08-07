@@ -24,5 +24,6 @@ void time_server_forceupdate();
 
 void weather_init(String apiKey, String location, String ApiHost);
 void weather_update();
+void weather_request_refresh();
 
 #endif

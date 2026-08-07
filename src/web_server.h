@@ -24,6 +24,7 @@ void setFan(bool enabled);
 void setFanTempControl(bool enabled);
 void setChargeLed(bool enabled);
 void sendSwitchStates(AsyncWebSocketClient *client = nullptr);
+void sendConfig(AsyncWebSocketClient *client = nullptr);
 void toggleSwitch(const String& switchType);
 void setSwitch(const String& switchType, bool state);
 void setAllSwitches(bool state);

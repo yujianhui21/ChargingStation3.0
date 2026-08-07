@@ -262,7 +262,7 @@ WiFi 信号不稳定导致传输中断时，已写入的进度会保存到 NVS�
 
 ```bash
 # 编译并无线上传（断点续传，连接断开会自动重连继续）
-python scripts/espota_resume.py -i 192.168.1.100 -f .pio/build/esp32-s3-devkitc-1/firmware.bin
+python scripts/espota_resume.py -i 192.168.1.247 -f .pio/build/esp32-s3-devkitc-1/firmware.bin
 
 # 串口监控升级进度
 pio device monitor
