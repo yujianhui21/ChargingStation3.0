@@ -46,7 +46,7 @@ void discovery_handle()
         // 收到任意广播即回复设备信息
         String ip = WiFi.localIP().toString();
         String mac = WiFi.macAddress();
-        String json = "{\"name\":\"多协议桌面充电站3.0\",\"ip\":\"" + ip
+        String json = "{\"type\":\"ChargingStation\",\"name\":\"多协议桌面充电站3.0\",\"ip\":\"" + ip
                     + "\",\"mac\":\"" + mac + "\"}";
 
         udpDiscovery.beginPacket(udpDiscovery.remoteIP(), udpDiscovery.remotePort());
